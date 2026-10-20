@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Musibot explorer</title>
+<style>
+  :root { --line: #d6d3cc; --muted: #6b6860; --accent: #1d4ed8; --bg: #faf9f6; --panel: #fff; --full: #0f766e; --step: #1d4ed8; --model: #7c3aed; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.4 system-ui, sans-serif; background: var(--bg); color: #1f1e1b; }
+  header { display: flex; gap: 16px; align-items: baseline; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 15px; margin: 0; }
+  header .muted { color: var(--muted); }
+  #error { display: none; margin-left: auto; align-self: center; background: #fdecec; color: #991b1b; border: 1px solid #f3b4b4; border-radius: 4px; padding: 2px 8px; max-width: 60%; }
+  #error.shown { display: flex; gap: 8px; align-items: baseline; }
+  #error button { padding: 0 6px; }
+  main { display: grid; grid-template-columns: 540px minmax(0, 1fr) 480px; gap: 10px; padding: 10px; height: calc(100vh - 38px); }
+  .column { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { text-align: left; padding: 3px 4px; border-top: 1px solid #eee; vertical-align: top; font-size: 12px; }
+  th { color: var(--muted); font-weight: 500; border-top: 0; }
+  tr.selectable { cursor: pointer; }
+  tr.selectable:hover { background: #f1efe9; }
+  tr.selected { background: #e6ecfb; }
+  code, pre, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; overflow-wrap: anywhere; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+  button { font: inherit; padding: 4px 9px; border: 1px solid #b8b4aa; border-radius: 4px; background: #fff; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.link { border: 0; background: none; padding: 0 2px; color: var(--accent); font-size: 11.5px; }
+  button:disabled { opacity: .45; cursor: default; }
+  input, select, textarea { font: inherit; padding: 4px 6px; border: 1px solid #b8b4aa; border-radius: 4px; background: #fff; }
+  textarea { width: 100%; min-height: 40px; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+  .row label { color: var(--muted); }
+  .grow { flex: 1; min-width: 80px; }
+  .state-running { color: #b45309; } .state-completed { color: #15803d; } .state-failed { color: #b91c1c; }
+  .hint { color: var(--muted); font-size: 11.5px; }
+
+  /* pipelines, grouped: full pipelines, steps, models, other */
+  .group { margin-top: 10px; }
+  .group:first-of-type { margin-top: 0; }
+  .group > h3 { font-size: 12.5px; margin: 0 0 2px; display: flex; gap: 6px; align-items: baseline; }
+  .group > h3::before { content: ''; width: 10px; height: 10px; border-radius: 2px; background: var(--group-colour); align-self: center; }
+  .group > .hint { margin: 0 0 4px; }
+  .group.full { --group-colour: var(--full); } .group.steps { --group-colour: var(--step); } .group.models { --group-colour: var(--model); } .group.other { --group-colour: #888; }
+  .entry-row { border: 1px solid #ebe8e1; border-left: 4px solid var(--group-colour); border-radius: 4px; margin: 4px 0; background: #fff; }
+  .entry-row.selected { border-color: var(--group-colour); background: #fbfbff; }
+  .entry-head { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 6px; padding: 5px 8px; cursor: pointer; align-items: baseline; }
+  .entry-head:hover { background: #f6f4ef; }
+  .entry-head .num { font-weight: 600; color: var(--group-colour); }
+  .entry-head .name { font-weight: 600; }
+  .entry-head .version { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--muted); margin-left: 4px; }
+  .entry-head .what { color: #3b3a36; }
+  .tag { display: inline-block; font-size: 10.5px; padding: 0 5px; border-radius: 3px; margin-left: 4px; background: #f1efe9; color: var(--muted); }
+  .ready { font-size: 11.5px; white-space: nowrap; }
+  .ready.yes { color: #15803d; } .ready.no { color: #b45309; } .ready.idle { color: var(--muted); }
+  .entry-body { padding: 4px 10px 10px 40px; border-top: 1px dashed #e4e1da; }
+  .sig { margin: 4px 0 6px; }
+  .input-group { margin: 6px 0; }
+  .input-group .pattern { display: flex; gap: 6px; align-items: baseline; }
+  .input-group label { display: block; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; padding-left: 14px; }
+  .missing { color: #b45309; }
+  .overwrite { background: #fff7e6; border: 1px solid #f5d9a8; border-radius: 4px; padding: 4px 6px; margin: 6px 0; font-size: 11.5px; }
+
+  /* centre */
+  #files-wrap { max-height: 28vh; overflow: auto; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+  .tabs button.active { background: #e6ecfb; border-color: var(--accent); }
+  #viewer-image-wrap { overflow: auto; max-height: 64vh; border: 1px solid var(--line); background: #eee; }
+  #canvas { display: block; }
+  #viewer-text { max-height: 64vh; overflow: auto; background: #fafaf8; padding: 8px; border: 1px solid var(--line); }
+  #viewer-notation { max-height: 64vh; overflow: auto; background: #fff; border: 1px solid var(--line); padding: 8px; }
+  #viewer-notation svg { max-width: 100%; height: auto; display: block; margin-bottom: 8px; }
+  .legend span { display: inline-block; padding: 1px 6px; border-radius: 3px; margin-right: 4px; font-size: 11px; cursor: pointer; border: 2px solid; }
+  .legend span.off { opacity: .35; }
+
+  /* the timeline: one entry per event, oldest first */
+  #timeline { flex: 1; overflow: auto; font-size: 12px; }
+  .entry { display: grid; grid-template-columns: 78px 1fr; gap: 6px; padding: 3px 0; border-top: 1px solid #f0eee8; }
+  .entry .when { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 11px; padding-top: 1px; }
+  .entry.request .what { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  .entry .summary { color: #3b3a36; }
+  .entry.in-exec { margin-left: 12px; border-left: 3px solid #cfd8f5; padding-left: 8px; }
+  .entry.log .what { color: #4b4a45; }
+  .entry.file .what { color: #7c3aed; }
+  .entry.result .what { font-weight: 600; }
+  .entry details { display: inline; }
+  .entry summary { display: inline; cursor: pointer; color: var(--accent); font-size: 11px; }
+  .entry details pre { margin: 4px 0 2px; background: #fafaf8; padding: 4px; border: 1px solid #eee; max-height: 260px; overflow: auto; }
+  .status-ok { color: #15803d; } .status-err { color: #b91c1c; font-weight: 600; } .status-pending { color: var(--muted); }
+  .exec-tag { display: inline-block; background: #e6ecfb; color: #1e3a8a; border-radius: 3px; padding: 0 5px; font-size: 11px; margin-right: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Musibot explorer</h1>
+  <span class="muted" id="info"></span>
+  <div id="error"><span id="error-text"></span><button id="error-close" title="Dismiss">×</button></div>
+</header>
+<main>
+  <!-- ------------------------------------------------------------ left -->
+  <div class="column">
+    <section>
+      <h2>1 · Page</h2>
+      <div class="row">
+        <button id="create-page" class="primary">Create page</button>
+        <button id="delete-page" disabled>Delete page</button>
+        <button id="save-page" disabled>Save files to out/</button>
+        <span class="mono" id="page-id"></span>
+      </div>
+      <div class="row">
+        <input type="file" id="upload-files" multiple accept="image/*,.json,.musicxml,.xml,.mei" class="grow">
+        <select id="upload-sample" title="A file from samples/"><option value="">or a sample…</option></select>
+      </div>
+      <div class="row">
+        <label>upload as</label><input id="upload-path" class="grow mono" value="image.jpg">
+        <button id="upload" disabled>Upload</button>
+      </div>
+      <p class="hint">The path is where the file lands in the page. Several files: put <code>{n}</code> in the path and they are numbered from 1. PNG is re-encoded as JPEG.</p>
+    </section>
+
+    <section>
+      <h2>2 · Pipelines <button id="reload-pipelines" style="float:right">reload</button></h2>
+      <div id="groups"></div>
+    </section>
+
+    <section>
+      <h2>3 · Executions</h2>
+      <table id="executions"><thead><tr><th>#</th><th>pipeline</th><th>input</th><th>state</th><th>s</th></tr></thead><tbody></tbody></table>
+    </section>
+  </div>
+
+  <!-- ---------------------------------------------------------- centre -->
+  <div class="column">
+    <section>
+      <h2>Files in the page</h2>
+      <div id="files-wrap"><table id="files"><thead><tr><th>file</th><th>bytes</th><th>written by</th></tr></thead><tbody></tbody></table></div>
+      <p class="hint" id="files-hint">Create a page first. Click a file to view it.</p>
+    </section>
+    <section>
+      <h2>Viewer <span class="mono" id="viewer-path" style="text-transform:none;letter-spacing:0"></span></h2>
+      <div class="tabs">
+        <button data-tab="image" class="active">Image</button>
+        <button data-tab="text">Text</button>
+        <button data-tab="notation">Notation</button>
+      </div>
+      <div id="tab-image">
+        <div class="row legend" id="legend"></div>
+        <div id="viewer-image-wrap"><canvas id="canvas" width="10" height="10"></canvas></div>
+        <p class="hint">On <code>image.jpg</code> the page's current <code>layout.json</code> is drawn over the scan. Click a category to hide or show it.</p>
+      </div>
+      <div id="tab-text" hidden><pre id="viewer-text"></pre></div>
+      <div id="tab-notation" hidden><div id="viewer-notation"></div></div>
+    </section>
+  </div>
+
+  <!-- ----------------------------------------------------------- right -->
+  <div class="column">
+    <section style="display:flex;flex-direction:column;min-height:0;flex:1">
+      <h2>Timeline <button id="clear-timeline" style="float:right">clear</button></h2>
+      <p class="hint" style="margin:0 0 6px">Oldest first. Every request this page sends, its response, and what the server streams back: log lines and written files, indented under the execution they belong to.</p>
+      <div id="timeline"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+// ---------------------------------------------------------------- state
+const state = {
+  pipelines: [],
+  page: null,                // {id, files: Map(path -> {size, execution_id}), executions: Map(id -> exec)}
+  streams: [],               // AbortControllers of the open SSE streams
+  image: null,               // {img: HTMLImageElement, path}
+  layout: null,              // parsed layout.json of the current page; null when not loaded or out of date
+  hidden: new Set(),         // layout categories toggled off
+  selected: null,            // key `name@version` of the expanded pipeline
+  unticked: new Map(),       // key -> Set of input files the user unticked
+  picked: new Map(),         // key -> {pattern: file} for one-instance inputs
+  params: new Map(),         // key -> parameters text
+};
+const CATEGORY_COLOURS = { staff: '#dc2828', system: '#285ad8', grandstaff: '#28a050', staffMeasure: '#f0a000', systemMeasure: '#9628c8' };
+const $ = (id) => document.getElementById(id);
+const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const byPath = (a, b) => a.localeCompare(b, undefined, { numeric: true });
+const keyOf = (p) => `${p.name}@${p.version}`;
+
+function fail(error) {
+  console.error(error);
+  $('error-text').textContent = error.message || String(error);
+  $('error').classList.add('shown');
+}
+
+// ------------------------------------------------------- what each one is
+// The groups and the descriptions follow the pmcg-orchestrator README. A
+// pipeline the table does not name is listed under "Other" with its signature.
+const GROUPS = [
+  { id: 'full', title: 'Full pipelines', hint: 'One execution: image.jpg in, every step run on the server, transcription.musicxml out (with layout.json, the staff crops and their transcriptions left in the page).' },
+  { id: 'steps', title: 'Steps, one at a time', hint: 'The steps of mzk-page as separate executions on one page, run 1 → 4. Left uncorrected they produce the same transcription.musicxml as mzk-page of the glue version used. A corrected layout.json can be uploaded between 1 and 2.' },
+  { id: 'models', title: 'Models on their own', hint: 'The staff models called directly: one staff crop per execution.' },
+  { id: 'other', title: 'Other', hint: 'Listed by the server, not described here.' },
+];
+const ROLES = {
+  'mzk-page': { group: 'full', what: { '1': 'page → MusicXML, every staff in one part, one system per staff', '2': 'page → MusicXML, a part per instrument (grand staves joined, read from the system and grandstaff boxes)' } },
+  'dvorak-ola': { group: 'steps', step: 1, tag: 'model', what: 'find staves, systems, grand staves and measures → layout.json', params: '{"image_size": 1280}  (also confidence, iou, max_detections; image_size default 640)' },
+  'pmcg-slice': { group: 'steps', step: 2, what: 'cut one crop per staff box of layout.json (margin 0.9 × staff height, reading order)' },
+  'mzk-staff': { group: 'steps', step: 3, what: 'transcribe the staff crops, all in one execution (ayce-long)' },
+  'pmcg-glue': { group: 'steps', step: 4, what: { '1': 'join the staff transcriptions into one part, as mzk-page 1', '2': 'join the staff transcriptions into a part per instrument, as mzk-page 2' } },
+  'ayce': { group: 'models', tag: 'model', what: 'staff crop → MusicXML' },
+  'ayce-long': { group: 'models', tag: 'model', what: 'staff crop → MusicXML (the model mzk-staff runs)' },
+};
+function roleOf(p) {
+  const role = ROLES[p.name];
+  if (!role) return { group: 'other', what: p.implicit ? 'model' : '', tag: p.implicit ? 'model' : null };
+  return { ...role, what: typeof role.what === 'object' ? role.what[p.version] || '' : role.what };
+}
+
+// --------------------------------------------------------- signatures
+// A slot is a whole path segment: {} / {name} is one instance, {*} / {*name}
+// every instance; a trailing ? makes the entry optional.
+const SLOT = /^\{(\*?)([^}]*)\}$/;
+function patternKind(pattern) {
+  const segs = pattern.replace(/\?$/, '').split('/');
+  if (segs.some((s) => SLOT.exec(s)?.[1] === '*')) return 'set';
+  return segs.some((s) => SLOT.test(s)) ? 'one' : 'fixed';
+}
+// The slot names a path binds, or null when the path does not fit the pattern.
+function bind(pattern, path) {
+  const ps = pattern.replace(/\?$/, '').split('/'), xs = path.split('/');
+  if (ps.length !== xs.length) return null;
+  const bound = {};
+  for (let i = 0; i < ps.length; i++) {
+    const slot = SLOT.exec(ps[i]);
+    if (slot) { if (slot[2]) bound[slot[2]] = xs[i]; } else if (ps[i] !== xs[i]) return null;
+  }
+  return bound;
+}
+function instantiate(pattern, fill) {
+  return pattern.replace(/\?$/, '').split('/').map((seg) => (SLOT.test(seg) ? fill : seg)).join('/');
+}
+
+// For each input pattern: the page files that fit it and which of them are chosen.
+function inputPlan(p) {
+  const key = keyOf(p);
+  const files = state.page ? [...state.page.files.keys()].sort(byPath) : [];
+  const unticked = state.unticked.get(key) || new Set();
+  const picked = state.picked.get(key) || {};
+  return p.signature.input.map((pattern) => {
+    const optional = pattern.endsWith('?');
+    const kind = patternKind(pattern);
+    const matches = files.filter((f) => bind(pattern, f));
+    let chosen;
+    if (kind === 'one') chosen = matches.includes(picked[pattern]) ? [picked[pattern]] : matches.slice(0, 1);
+    else chosen = matches.filter((f) => !unticked.has(f));
+    return { pattern, optional, kind, matches, chosen, missing: !optional && chosen.length === 0 };
+  });
+}
+
+// The files already in the page that an execution with these inputs would write over.
+function overwrites(p, plan) {
+  if (!state.page) return [];
+  const bound = {};
+  for (const g of plan) for (const f of g.chosen) for (const [name, value] of Object.entries(bind(g.pattern, f) || {})) (bound[name] ||= new Set()).add(value);
+  const hits = new Set();
+  for (const pattern of p.signature.output) {
+    for (const f of state.page.files.keys()) {
+      const b = bind(pattern, f);
+      if (b && Object.entries(b).every(([name, value]) => !bound[name] || bound[name].has(value))) hits.add(f);
+    }
+  }
+  return [...hits].sort(byPath);
+}
+
+// ------------------------------------------------------------- timeline
+function now() {
+  const d = new Date();
+  return d.toLocaleTimeString('en-GB', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0').slice(0, 1);
+}
+
+// kind: request | log | file | result | note. `exec` indents the entry under that execution.
+function addEntry({ kind, what, summary = '', details = null, exec = null, cls = '' }) {
+  const entry = document.createElement('div');
+  entry.className = `entry ${kind} ${exec != null ? 'in-exec' : ''} ${cls}`;
+  entry.innerHTML = `<div class="when">${now()}</div><div>`
+    + (exec != null ? `<span class="exec-tag">exec ${exec}</span>` : '')
+    + `<span class="what">${what}</span>`
+    + ` <span class="summary">${summary}</span>`
+    + (details ? ` <details><summary>details</summary><pre>${escapeHtml(details)}</pre></details>` : '')
+    + `</div>`;
+  const timeline = $('timeline');
+  const atBottom = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 30;
+  timeline.appendChild(entry);
+  if (atBottom) timeline.scrollTop = timeline.scrollHeight;
+  return entry;
+}
+
+// One request = one entry, added the moment it is sent ("→ METHOD path …") and
+// completed when the answer arrives: status, a one-line reading of the response,
+// and the raw bodies behind "details". Streamed events that arrive in between
+// therefore appear below the command that caused them.
+function beginRequest(method, path, body, { exec = null } = {}) {
+  const entry = addEntry({ kind: 'request', exec, what: `→ ${method} ${escapeHtml(path)} <span class="status-pending">…</span>`, summary: '' });
+  entry.dataset.body = body === undefined ? '' : `request body:\n${JSON.stringify(body, null, 1)}\n\n`;
+  return entry;
+}
+function endRequest(entry, status, data, ms, readable = '') {
+  entry.querySelector('.status-pending').outerHTML = `<span class="${status < 400 ? 'status-ok' : 'status-err'}">${status}</span> <span class="hint">${ms.toFixed(0)} ms</span>`;
+  entry.querySelector('.summary').innerHTML = readable ? '← ' + readable : '';
+  const details = entry.dataset.body + `response:\n${typeof data === 'string' ? data : JSON.stringify(data, null, 1)}`;
+  entry.querySelector('.what').insertAdjacentHTML('afterend', ` <details><summary>details</summary><pre>${escapeHtml(details)}</pre></details>`);
+}
+
+const listInput = (input) => (input.length > 3 ? `${input.length} files (${input.slice(0, 2).join(', ')}, …)` : input.join(', '));
+
+// What a response means, in one line, for the endpoints this page uses.
+function describe(method, path, body, data) {
+  if (path === '/pipelines') return `${data.pipelines.length} pipelines listed${data.warnings?.length ? `, ${data.warnings.length} warning(s)` : ''}`;
+  if (method === 'POST' && path === '/musicorpus-pages') return `page <b>${data.page_id}</b> created (empty)`;
+  if (method === 'DELETE') return 'page deleted, its files and running executions gone';
+  if (path.endsWith('/files')) return `${data.files.length} file(s) in the page`;
+  if (path.endsWith('/file-urls')) {
+    const put = Object.keys(data.put || {}), get = Object.keys(data.get || {});
+    return [put.length && `${put.length} upload URL(s) for ${listInput(put)}`, get.length && `${get.length} download URL(s) for ${listInput(get)}`].filter(Boolean).join('; ') + ` (valid until ${data.expires_at?.slice(11, 19)})`;
+  }
+  if (method === 'POST' && path.endsWith('/pipeline-executions')) return `execution <b>${data.execution_id}</b> started: ${data.pipeline_name} ${data.pipeline_version} on ${escapeHtml(listInput(data.input))} — state ${data.state}`;
+  if (/\/pipeline-executions\/\d+$/.test(path)) return `execution ${data.execution_id} is <b>${data.state}</b>${data.error ? ': ' + escapeHtml(data.error) : ''}`;
+  return '';
+}
+
+async function api(method, path, body, { quiet = false, exec = null } = {}) {
+  const entry = quiet ? null : beginRequest(method, path, body, { exec });
+  const started = performance.now();
+  const response = await fetch('/api' + path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+  const text = await response.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (entry) endRequest(entry, response.status, data, performance.now() - started, response.ok ? describe(method, path, body, data) : escapeHtml(text.slice(0, 200)));
+  if (!response.ok) throw new Error(`${method} ${path} → ${response.status}: ${text.slice(0, 300)}`);
+  return data;
+}
+
+// ------------------------------------------------------------ pipelines
+async function loadPipelines() {
+  const listing = await api('GET', '/pipelines');
+  state.pipelines = listing.pipelines;
+  for (const w of listing.warnings) addEntry({ kind: 'note', what: 'pipeline warning', summary: escapeHtml(JSON.stringify(w)) });
+  if (!state.pipelines.some((p) => keyOf(p) === state.selected)) state.selected = null;
+  renderPipelines();
+}
+
+function orderInGroup(a, b) {
+  const ra = roleOf(a), rb = roleOf(b);
+  return (ra.step ?? 0) - (rb.step ?? 0) || a.name.localeCompare(b.name) || a.version.localeCompare(b.version, undefined, { numeric: true });
+}
+
+function renderPipelines() {
+  const box = $('groups');
+  box.innerHTML = '';
+  for (const group of GROUPS) {
+    const members = state.pipelines.filter((p) => roleOf(p).group === group.id).sort(orderInGroup);
+    if (!members.length) continue;
+    const el = document.createElement('div');
+    el.className = `group ${group.id}`;
+    el.innerHTML = `<h3>${group.title}</h3><p class="hint">${group.hint}</p>`;
+    for (const p of members) el.appendChild(renderEntry(p));
+    box.appendChild(el);
+  }
+}
+
+function readiness(plan) {
+  if (!state.page) return { cls: 'idle', text: 'no page' };
+  const missing = plan.filter((g) => g.missing).map((g) => g.pattern);
+  return missing.length ? { cls: 'no', text: `needs ${missing.join(', ')}` } : { cls: 'yes', text: 'ready' };
+}
+
+function renderEntry(p) {
+  const key = keyOf(p);
+  const role = roleOf(p);
+  const plan = inputPlan(p);
+  const ready = readiness(plan);
+  const row = document.createElement('div');
+  row.className = 'entry-row' + (state.selected === key ? ' selected' : '');
+  const zero = p.instances === 0 ? ' <span class="state-failed">(0 running)</span>' : '';
+  row.innerHTML = `<div class="entry-head"><span class="num">${role.step ? role.step : ''}</span>`
+    + `<span><span class="name">${escapeHtml(p.name)}</span><span class="version">${escapeHtml(p.version)}</span>${role.tag ? `<span class="tag">${role.tag}</span>` : ''}${zero}`
+    + (role.what ? `<br><span class="what">${escapeHtml(role.what)}</span>` : '') + `</span>`
+    + `<span class="ready ${ready.cls}">${escapeHtml(ready.text)}</span></div>`;
+  row.querySelector('.entry-head').onclick = () => selectPipeline(state.selected === key ? null : p);
+  if (state.selected === key) row.appendChild(renderBody(p, plan, ready));
+  return row;
+}
+
+// The expanded entry: its signature, the inputs chosen from the page's files,
+// parameters, what it would overwrite, and the start button.
+function renderBody(p, plan, ready) {
+  const key = keyOf(p);
+  const body = document.createElement('div');
+  body.className = 'entry-body';
+  body.innerHTML = `<div class="sig mono">${p.signature.input.map(escapeHtml).join(', ')}<br>→ ${p.signature.output.map(escapeHtml).join(', ')}</div>`;
+  if (!state.page) {
+    body.insertAdjacentHTML('beforeend', '<p class="hint">Create a page and upload <code>image.jpg</code> first.</p>');
+    return body;
+  }
+  for (const g of plan) {
+    const box = document.createElement('div');
+    box.className = 'input-group';
+    const count = g.kind === 'set' ? `${g.chosen.length} of ${g.matches.length}` : g.kind === 'one' ? 'one per execution' : '';
+    box.innerHTML = `<div class="pattern"><code>${escapeHtml(g.pattern)}</code><span class="hint">${count}${g.optional ? ' · optional' : ''}</span>`
+      + (g.kind === 'set' && g.matches.length > 1 ? ` <button class="link" data-all>all</button><button class="link" data-none>none</button>` : '') + `</div>`;
+    if (!g.matches.length) {
+      box.insertAdjacentHTML('beforeend', `<label class="${g.optional ? 'hint' : 'missing'}">${g.optional ? 'not in the page' : 'not in the page yet — upload it at this path or run the step that writes it'}</label>`);
+    } else if (g.kind === 'one') {
+      const options = g.matches.map((f) => `<option ${g.chosen[0] === f ? 'selected' : ''}>${escapeHtml(f)}</option>`).join('');
+      box.insertAdjacentHTML('beforeend', `<label><select>${options}</select></label>`);
+      box.querySelector('select').onchange = (e) => { state.picked.set(key, { ...(state.picked.get(key) || {}), [g.pattern]: e.target.value }); renderPipelines(); };
+    } else {
+      for (const f of g.matches) {
+        const label = document.createElement('label');
+        label.innerHTML = `<input type="checkbox" ${g.chosen.includes(f) ? 'checked' : ''}> ${escapeHtml(f)}`;
+        label.querySelector('input').onchange = (e) => { toggleInput(key, [f], e.target.checked); renderPipelines(); };
+        box.appendChild(label);
+      }
+      box.querySelector('[data-all]')?.addEventListener('click', () => { toggleInput(key, g.matches, true); renderPipelines(); });
+      box.querySelector('[data-none]')?.addEventListener('click', () => { toggleInput(key, g.matches, false); renderPipelines(); });
+    }
+    body.appendChild(box);
+  }
+  const role = roleOf(p);
+  body.insertAdjacentHTML('beforeend', `<div class="row"><label>parameters (JSON)</label>${role.params ? `<span class="hint">e.g. <code>${escapeHtml(role.params)}</code></span>` : ''}</div><textarea>${escapeHtml(state.params.get(key) ?? '{}')}</textarea>`);
+  body.querySelector('textarea').oninput = (e) => state.params.set(key, e.target.value);
+  const over = overwrites(p, plan);
+  if (over.length) {
+    const writers = [...new Set(over.map((f) => writerOf(f)))].join('; ');
+    body.insertAdjacentHTML('beforeend', `<div class="overwrite">Writes over ${over.length} file(s) already in the page (${escapeHtml(writers)}): <code>${escapeHtml(listInput(over))}</code>. Use a new page to keep both results.</div>`);
+  }
+  body.insertAdjacentHTML('beforeend', `<div class="row"><button class="primary" ${ready.cls === 'yes' ? '' : 'disabled'}>Start ${escapeHtml(p.name)} ${escapeHtml(p.version)}</button>${ready.cls === 'no' ? `<span class="missing">${escapeHtml(ready.text)}</span>` : ''}</div>`);
+  body.querySelector('button.primary').onclick = () => startExecution(p).catch(fail);
+  return body;
+}
+
+function toggleInput(key, files, on) {
+  const set = state.unticked.get(key) || new Set();
+  for (const f of files) on ? set.delete(f) : set.add(f);
+  state.unticked.set(key, set);
+}
+
+function selectPipeline(p) {
+  state.selected = p ? keyOf(p) : null;
+  if (p) {
+    // Point the upload path at the first input the page still lacks.
+    const missing = inputPlan(p).find((g) => g.missing);
+    if (missing) $('upload-path').value = instantiate(missing.pattern, '{n}');
+  }
+  renderPipelines();
+}
+
+// ----------------------------------------------------------------- page
+async function createPage() {
+  await closePage();
+  const view = await api('POST', '/musicorpus-pages');
+  state.page = { id: view.page_id, files: new Map(), executions: new Map() };
+  state.layout = null; state.image = null;
+  state.unticked.clear(); state.picked.clear();
+  $('page-id').textContent = view.page_id;
+  $('delete-page').disabled = $('save-page').disabled = $('upload').disabled = false;
+  renderExecutions(); renderLegend(); drawCanvas();
+  await refreshFiles();
+  openStreams();
+}
+
+async function closePage() {
+  for (const c of state.streams) c.abort();
+  state.streams = [];
+}
+
+async function deletePage() {
+  if (!state.page) return;
+  await api('DELETE', `/musicorpus-pages/${state.page.id}`);
+  await closePage();
+  state.page = null;
+  state.layout = null; state.image = null;
+  $('page-id').textContent = '';
+  $('delete-page').disabled = $('save-page').disabled = $('upload').disabled = true;
+  renderFiles(); renderExecutions(); renderPipelines(); renderLegend(); drawCanvas();
+}
+
+function writerOf(path) {
+  const id = state.page.files.get(path)?.execution_id;
+  if (id == null) return 'upload';
+  const e = state.page.executions.get(id);
+  return e ? `exec ${id} · ${e.pipeline_name} ${e.pipeline_version}` : `exec ${id}`;
+}
+
+async function refreshFiles({ quiet = true } = {}) {
+  if (!state.page) return;
+  const listing = await api('GET', `/musicorpus-pages/${state.page.id}/files`, undefined, { quiet });
+  for (const f of listing.files) {
+    const known = state.page.files.get(f.path);
+    state.page.files.set(f.path, { size: f.size, execution_id: known?.execution_id ?? null });
+  }
+  renderFiles();
+  renderPipelines();
+}
+
+function renderFiles() {
+  const tbody = $('files').querySelector('tbody');
+  tbody.innerHTML = '';
+  $('files-hint').textContent = state.page ? 'Click a file to view it. The list refreshes when the server reports a written file.' : 'Create a page first. Click a file to view it.';
+  if (!state.page) return;
+  for (const path of [...state.page.files.keys()].sort(byPath)) {
+    const tr = document.createElement('tr');
+    tr.className = 'selectable';
+    tr.innerHTML = `<td class="mono">${escapeHtml(path)}</td><td>${state.page.files.get(path).size}</td><td>${escapeHtml(writerOf(path))}</td>`;
+    tr.onclick = () => viewFile(path).catch(fail);
+    tbody.appendChild(tr);
+  }
+}
+
+// A new layout.json makes the drawn one out of date; reload it if the scan is on screen.
+function layoutChanged() {
+  state.layout = null;
+  renderLegend();
+  if (state.image?.path === 'image.jpg') loadLayout().then(drawCanvas).catch(fail);
+  else drawCanvas();
+}
+
+// The three server-sent event streams: this page's log, this page's file
+// changes, and the identity-wide results stream (every page of the token).
+function openStreams() {
+  const id = state.page.id;
+  stream(`/musicorpus-pages/${id}/logs`, 'log lines of this page', (e) => {
+    addEntry({ kind: 'log', exec: e.execution_id, what: `log <span class="hint">t+${e.seconds.toFixed(1)}s</span> <b>${escapeHtml(e.source)}</b> <span class="state-${e.level === 'error' ? 'failed' : e.level === 'warning' ? 'running' : 'completed'}">${e.level}</span>:`, summary: escapeHtml(e.message) });
+  });
+  stream(`/musicorpus-pages/${id}/file-changes`, 'written files of this page', (e) => {
+    for (const path of e.paths) state.page.files.set(path, { size: state.page.files.get(path)?.size ?? 0, execution_id: e.execution_id });
+    addEntry({ kind: 'file', exec: e.execution_id, what: 'wrote', summary: e.paths.map((p) => `<code>${escapeHtml(p)}</code>`).join(', ') });
+    if (e.paths.includes('layout.json')) layoutChanged();
+    refreshFiles().catch(fail);
+  });
+  stream(`/pipeline-execution-results`, 'endings of executions of this token', (e) => {
+    if (e.page_id !== state.page?.id) return;
+    const known = state.page.executions.get(e.execution.execution_id) || {};
+    state.page.executions.set(e.execution.execution_id, { ...known, ...e.execution });
+    renderExecutions();
+  });
+}
+
+function stream(path, purpose, onEvent) {
+  const controller = new AbortController();
+  state.streams.push(controller);
+  (async () => {
+    try {
+      const entry = addEntry({ kind: 'request', what: `→ POST ${escapeHtml(path)} <span class="status-pending">…</span>`, summary: `stream requested: ${purpose}. It stays open until the page is deleted; the server answers when it first has something to send.` });
+      const response = await fetch('/api' + path, { method: 'POST', signal: controller.signal });
+      entry.querySelector('.status-pending').outerHTML = `<span class="status-ok">${response.status}</span>`;
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let index;
+        while ((index = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, index).trim();
+          buffer = buffer.slice(index + 1);
+          if (line.startsWith('data:')) onEvent(JSON.parse(line.slice(5)));
+        }
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') console.warn(path, error);
+    }
+  })();
+}
+
+// --------------------------------------------------------------- upload
+async function uploadBytes(files) {
+  // files: {path: Blob}. One file-urls call, then one PUT per file straight to object storage.
+  const paths = Object.keys(files);
+  const urls = await api('POST', `/musicorpus-pages/${state.page.id}/file-urls`, { put: paths });
+  for (const path of paths) {
+    const entry = beginRequest('PUT', `(presigned URL) ${path}`);
+    const started = performance.now();
+    const response = await fetch('/blob?url=' + encodeURIComponent(urls.put[path]), { method: 'PUT', body: files[path] });
+    endRequest(entry, response.status, `${files[path].size} bytes sent to object storage`, performance.now() - started, `${files[path].size} bytes stored as <code>${escapeHtml(path)}</code>`);
+    if (!response.ok) throw new Error(`upload of ${path} failed: ${response.status}`);
+    state.page.files.set(path, { size: files[path].size, execution_id: null });
+  }
+  if (paths.includes('layout.json')) layoutChanged();
+  await refreshFiles({ quiet: false });
+}
+
+async function uploadSelected() {
+  const chosen = [...$('upload-files').files];
+  const sample = $('upload-sample').value;
+  if (sample) chosen.push(await fetch('/samples/' + encodeURIComponent(sample)).then((r) => r.blob()).then((b) => new File([b], sample, { type: b.type })));
+  if (!chosen.length) throw new Error('choose a file or a sample to upload');
+  const pattern = $('upload-path').value.trim();
+  const files = {};
+  for (const [i, file] of chosen.entries()) {
+    const path = chosen.length > 1 || pattern.includes('{n}') ? pattern.replace('{n}', String(i + 1)) : pattern;
+    files[path] = path.endsWith('.jpg') && file.type !== 'image/jpeg' ? await toJpeg(file) : file;
+  }
+  await uploadBytes(files);
+}
+
+async function toJpeg(blob) {
+  const img = await loadImage(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+  canvas.getContext('2d').drawImage(img, 0, 0);
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+}
+
+function loadImage(blob) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(blob);
+  });
+}
+
+// ------------------------------------------------------------ execution
+async function startExecution(p) {
+  const key = keyOf(p);
+  const input = inputPlan(p).flatMap((g) => g.chosen);
+  let parameters;
+  try { parameters = JSON.parse(state.params.get(key) || '{}'); } catch { throw new Error('parameters must be a JSON object'); }
+  const exec = await api('POST', `/musicorpus-pages/${state.page.id}/pipeline-executions`, {
+    pipeline_name: p.name, pipeline_version: p.version, input, parameters,
+  });
+  exec.started = performance.now();
+  state.page.executions.set(exec.execution_id, exec);
+  renderExecutions();
+  await waitFor(exec.execution_id);
+}
+
+// Ask the server every second until the execution has settled. The polls are
+// one timeline entry that counts up; the final answer is a request entry of
+// its own. The results stream may announce the ending first.
+async function waitFor(executionId) {
+  const path = `/musicorpus-pages/${state.page.id}/pipeline-executions/${executionId}`;
+  const polling = addEntry({ kind: 'note', exec: executionId, what: `waiting: GET ${escapeHtml(path)} every second`, summary: '(0 polls so far)' });
+  let polls = 0;
+  for (;;) {
+    const known = state.page.executions.get(executionId);
+    if (known.state !== 'running') break;
+    await new Promise((r) => setTimeout(r, 1000));
+    const exec = await api('GET', path, undefined, { quiet: true });
+    polls += 1;
+    polling.querySelector('.summary').textContent = `(${polls} poll${polls === 1 ? '' : 's'} so far, still running)`;
+    if (exec.state !== 'running') {
+      exec.seconds = (performance.now() - known.started) / 1000;
+      state.page.executions.set(executionId, { ...known, ...exec });
+      endRequest(beginRequest('GET', path, undefined, { exec: executionId }), 200, exec, 0, describe('GET', path, undefined, exec));
+    }
+  }
+  const settled = state.page.executions.get(executionId);
+  polling.querySelector('.summary').textContent = `(${polls} poll${polls === 1 ? '' : 's'})`;
+  const produced = [...state.page.files.entries()].filter(([, f]) => f.execution_id === executionId).map(([p]) => p);
+  addEntry({ kind: 'result', exec: executionId, cls: `state-${settled.state}`, what: `execution ${executionId} ${settled.state}`, summary: `${settled.error ? escapeHtml(settled.error) + ' — ' : ''}${produced.length} file(s) written${produced.length > 6 ? '' : ': ' + produced.map((p) => `<code>${escapeHtml(p)}</code>`).join(', ')}`, details: produced.length > 6 ? produced.join('\n') : null });
+  if (settled.state === 'failed') fail(new Error(`execution ${executionId} (${settled.pipeline_name} ${settled.pipeline_version}) failed: ${settled.error || 'no reason given'}`));
+  renderExecutions();
+  await refreshFiles({ quiet: false });
+}
+
+function renderExecutions() {
+  const tbody = $('executions').querySelector('tbody');
+  tbody.innerHTML = '';
+  if (!state.page) return;
+  for (const e of state.page.executions.values()) {
+    const tr = document.createElement('tr');
+    const seconds = e.seconds ?? (e.state === 'running' && e.started ? (performance.now() - e.started) / 1000 : null);
+    tr.innerHTML = `<td>${e.execution_id}</td><td>${escapeHtml(e.pipeline_name)} <span class="mono">${escapeHtml(e.pipeline_version)}</span></td><td class="mono" title="${escapeHtml(e.input.join('\n'))}">${escapeHtml(listInput(e.input))}</td>`
+      + `<td class="state-${e.state}">${e.state}${e.error ? `<br><span class="hint">${escapeHtml(e.error)}</span>` : ''}</td><td>${seconds == null ? '' : seconds.toFixed(1)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// --------------------------------------------------------------- viewer
+async function fetchFile(path) {
+  const urls = await api('POST', `/musicorpus-pages/${state.page.id}/file-urls`, { get: [path] });
+  const entry = beginRequest('GET', `(presigned URL) ${path}`);
+  const started = performance.now();
+  const response = await fetch('/blob?url=' + encodeURIComponent(urls.get[path]));
+  const blob = await response.blob();
+  endRequest(entry, response.status, `${blob.size} bytes received from object storage`, performance.now() - started, `${blob.size} bytes of <code>${escapeHtml(path)}</code> downloaded`);
+  if (!response.ok) throw new Error(`download of ${path} failed: ${response.status}`);
+  return blob;
+}
+
+async function loadLayout() {
+  if (!state.page?.files.has('layout.json')) return;
+  const data = JSON.parse(await (await fetchFile('layout.json')).text());
+  if (data.annotations && data.categories) { state.layout = data; renderLegend(); }
+}
+
+async function viewFile(path) {
+  $('viewer-path').textContent = path;
+  const blob = await fetchFile(path);
+  if (/\.(jpe?g|png)$/i.test(path)) {
+    state.image = { img: await loadImage(blob), path };
+    if (path === 'image.jpg' && !state.layout) await loadLayout();
+    showTab('image'); drawCanvas();
+    return;
+  }
+  const text = await blob.text();
+  if (path.endsWith('.json')) {
+    const data = JSON.parse(text);
+    $('viewer-text').textContent = JSON.stringify(data, null, 1);
+    if (path === 'layout.json' && data.annotations && data.categories) { state.layout = data; renderLegend(); drawCanvas(); }
+    showTab('text');
+    return;
+  }
+  $('viewer-text').textContent = text;
+  showTab('text');
+  if (/\.(musicxml|mei|xml)$/i.test(path)) {
+    const rendered = await renderNotation(text);
+    if (rendered) {
+      $('viewer-notation').innerHTML = rendered.svg.join('');
+      $('viewer-text').textContent = text + '\n\n<!-- ======== the same as MEI, converted locally by verovio ======== -->\n' + rendered.mei;
+      showTab('notation');
+    }
+  }
+}
+
+async function renderNotation(xml) {
+  const entry = beginRequest('POST', '/render (local verovio, not Musibot)');
+  const started = performance.now();
+  const response = await fetch('/render', { method: 'POST', body: xml });
+  const data = await response.json();
+  endRequest(entry, response.status, response.ok ? `${data.svg.length} page(s) of SVG` : data, performance.now() - started, response.ok ? `rendered ${data.svg.length} page(s)` : escapeHtml(data.error || ''));
+  return response.ok ? data : null;
+}
+
+function showTab(name) {
+  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  for (const tab of ['image', 'text', 'notation']) $('tab-' + tab).hidden = tab !== name;
+}
+
+function renderLegend() {
+  const legend = $('legend');
+  legend.innerHTML = '';
+  if (!state.layout) return;
+  const counts = {};
+  const names = Object.fromEntries(state.layout.categories.map((c) => [c.id, c.name]));
+  for (const a of state.layout.annotations) counts[names[a.category_id]] = (counts[names[a.category_id]] || 0) + 1;
+  for (const [name, n] of Object.entries(counts)) {
+    const chip = document.createElement('span');
+    chip.textContent = `${name} ${n}`;
+    chip.style.borderColor = CATEGORY_COLOURS[name] || '#000';
+    chip.classList.toggle('off', state.hidden.has(name));
+    chip.onclick = () => { state.hidden.has(name) ? state.hidden.delete(name) : state.hidden.add(name); renderLegend(); drawCanvas(); };
+    legend.appendChild(chip);
+  }
+}
+
+// The canvas shows the image scaled to fit the column; layout boxes are in image pixels.
+const canvas = $('canvas');
+function drawCanvas() {
+  const ctx = canvas.getContext('2d');
+  if (!state.image) { canvas.width = canvas.height = 10; ctx.clearRect(0, 0, 10, 10); return; }
+  const img = state.image.img;
+  const maxWidth = $('viewer-image-wrap').clientWidth - 2 || 900;
+  canvas.width = Math.min(maxWidth, img.naturalWidth);
+  canvas.height = Math.round(img.naturalHeight * canvas.width / img.naturalWidth);
+  const s = canvas.width / img.naturalWidth;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  if (state.layout && state.image.path === 'image.jpg') {
+    const names = Object.fromEntries(state.layout.categories.map((c) => [c.id, c.name]));
+    for (const a of state.layout.annotations) {
+      const name = names[a.category_id];
+      if (state.hidden.has(name)) continue;
+      const [x, y, w, h] = a.bbox;
+      ctx.strokeStyle = CATEGORY_COLOURS[name] || '#000';
+      ctx.lineWidth = name === 'system' ? 3 : name === 'staffMeasure' ? 1 : 2;
+      ctx.strokeRect(x * s, y * s, w * s, h * s);
+    }
+  }
+}
+window.addEventListener('resize', drawCanvas);
+
+// ---------------------------------------------------------------- wiring
+$('reload-pipelines').onclick = () => loadPipelines().catch(fail);
+$('create-page').onclick = () => createPage().catch(fail);
+$('delete-page').onclick = () => deletePage().catch(fail);
+$('save-page').onclick = () => fetch(`/save/${state.page.id}`, { method: 'POST' }).then((r) => r.json())
+  .then((d) => addEntry({ kind: 'note', what: 'saved locally (not a Musibot call):', summary: `${d.files.length} file(s) written to <code>${escapeHtml(d.folder)}</code>` })).catch(fail);
+$('upload').onclick = () => uploadSelected().catch(fail);
+$('error-close').onclick = () => $('error').classList.remove('shown');
+document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
+$('clear-timeline').onclick = () => ($('timeline').innerHTML = '');
+setInterval(() => { if (state.page && [...state.page.executions.values()].some((e) => e.state === 'running')) renderExecutions(); }, 1000);
+
+fetch('/info').then((r) => r.json()).then((i) => {
+  $('info').textContent = `relay → ${i.url} · ${i.public_session ? 'public session (1 execution at a time, 60 s timeout)' : 'issued token'}`;
+});
+fetch('/samples').then((r) => r.json()).then((names) => {
+  for (const name of names) { const o = document.createElement('option'); o.value = o.textContent = name; $('upload-sample').appendChild(o); }
+});
+loadPipelines().catch(fail);
+</script>
+</body>
+</html>
